@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Thought, TagType, View } from './types';
+import { Thought, TagType, View, User } from './types';
 import { TAGS, ICONS } from './constants';
 import Header from './components/Header';
 import HeroInput from './components/HeroInput';
@@ -9,17 +9,15 @@ import ThoughtList from './components/ThoughtList';
 import BottomNav from './components/BottomNav';
 import ThoughtModal from './components/ThoughtModal';
 import SettingsModal from './components/SettingsModal';
+import Auth from './components/Auth';
+import ProfileView from './components/ProfileView';
 
-const SEED_DATA: Thought[] = [
-  { id: '1', text: 'Welcome to ThinkFlow! Tap the + to add your first thought.', tag: 'Inspiration', createdAt: Date.now() - 1000 * 60 * 5, pinned: true },
-  { id: '2', text: 'Remember to buy groceries: Milk, Eggs, Bread.', tag: 'To Do', createdAt: Date.now() - 1000 * 60 * 60 * 2, pinned: false },
-  { id: '3', text: 'Why do we dream?', tag: 'Questions', createdAt: Date.now() - 1000 * 60 * 60 * 24, pinned: false },
-];
-
-const STORAGE_KEY = 'thinkflow_thoughts';
+const STORAGE_KEY = 'thinkflow_thoughts_v2';
+const USER_KEY = 'thinkflow_user';
 const THEME_KEY = 'thinkflow_theme';
 
 const App: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [thoughts, setThoughts] = useState<Thought[]>([]);
   const [activeTag, setActiveTag] = useState<TagType>('All');
   const [activeView, setActiveView] = useState<View>('feed');
@@ -29,45 +27,64 @@ const App: React.FC = () => {
 
   // Initialize data
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      setThoughts(JSON.parse(saved));
-    } else {
-      setThoughts(SEED_DATA);
+    const savedUser = localStorage.getItem(USER_KEY);
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+    }
+
+    const savedThoughts = localStorage.getItem(STORAGE_KEY);
+    if (savedThoughts) {
+      setThoughts(JSON.parse(savedThoughts));
     }
 
     const savedTheme = localStorage.getItem(THEME_KEY) as 'light' | 'dark' | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
-    }
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
+    setTheme(initialTheme);
   }, []);
 
-  // Sync with Local Storage
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(thoughts));
-  }, [thoughts]);
-
+  // Theme effect
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
     }
   }, [theme]);
 
+  // Sync thoughts to LocalStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(thoughts));
+  }, [thoughts]);
+
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem(USER_KEY);
+    setActiveView('feed');
+  };
+
   const addThought = useCallback((text: string, tag: TagType) => {
+    if (!currentUser) return;
     const newThought: Thought = {
       id: crypto.randomUUID(),
+      userId: currentUser.id,
+      authorName: currentUser.username,
       text,
       tag,
       createdAt: Date.now(),
       pinned: false,
+      isPublic: false,
     };
     setThoughts(prev => [newThought, ...prev]);
-  }, []);
+  }, [currentUser]);
 
   const updateThought = useCallback((updated: Thought) => {
     setThoughts(prev => prev.map(t => t.id === updated.id ? updated : t));
@@ -82,36 +99,43 @@ const App: React.FC = () => {
     setThoughts(prev => prev.map(t => t.id === id ? { ...t, pinned: !t.pinned } : t));
   }, []);
 
-  const toggleTheme = useCallback(() => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  const togglePublic = useCallback((id: string) => {
+    setThoughts(prev => prev.map(t => t.id === id ? { ...t, isPublic: !t.isPublic } : t));
   }, []);
 
   const filteredThoughts = useMemo(() => {
     let list = thoughts;
+    
+    if (activeView === 'community') {
+      list = list.filter(t => t.isPublic);
+    } else {
+      // Feed view - only current user's thoughts
+      list = list.filter(t => t.userId === currentUser?.id);
+    }
+
     if (activeTag !== 'All') {
       list = list.filter(t => t.tag === activeTag);
     }
-    // Sort: Pinned first, then by createdAt descending
+
     return [...list].sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
+      if (a.pinned && !b.pinned && activeView !== 'community') return -1;
+      if (!a.pinned && b.pinned && activeView !== 'community') return 1;
       return b.createdAt - a.createdAt;
     });
-  }, [thoughts, activeTag]);
+  }, [thoughts, activeTag, activeView, currentUser]);
 
-  const stats = useMemo(() => {
-    const total = thoughts.length;
-    const pinned = thoughts.filter(t => t.pinned).length;
-    const tagCounts = TAGS.reduce((acc, tag) => {
-        acc[tag.name] = thoughts.filter(t => t.tag === tag.name).length;
-        return acc;
-    }, {} as Record<string, number>);
-    return { total, pinned, tagCounts };
-  }, [thoughts]);
+  if (!currentUser) {
+    return <Auth onLogin={handleLogin} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />;
+  }
 
   return (
-    <div className="min-h-screen pb-24 md:pb-12 md:flex md:flex-col items-center">
-      <Header theme={theme} onToggleTheme={toggleTheme} onOpenSettings={() => setShowSettings(true)} />
+    <div className="min-h-screen bg-gray-50 dark:bg-[#0F172A] text-slate-900 dark:text-gray-100 transition-colors duration-300 pb-24 md:pb-12 md:flex md:flex-col items-center">
+      <Header 
+        theme={theme} 
+        user={currentUser}
+        onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
+        onOpenSettings={() => setShowSettings(true)} 
+      />
       
       <main className="w-full max-w-2xl px-4 safe-top mt-16 animate-in fade-in duration-500">
         {activeView === 'feed' && (
@@ -123,8 +147,27 @@ const App: React.FC = () => {
               onEdit={setEditingThought} 
               onDelete={deleteThought} 
               onTogglePin={togglePin} 
+              onTogglePublic={togglePublic}
+              currentUserId={currentUser.id}
             />
           </>
+        )}
+
+        {activeView === 'community' && (
+          <div className="pt-4">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+              <ICONS.Community className="text-[#6C63FF]" /> Public Stream
+            </h2>
+            <ThoughtList 
+              thoughts={filteredThoughts} 
+              onEdit={setEditingThought} 
+              onDelete={deleteThought} 
+              onTogglePin={togglePin} 
+              onTogglePublic={togglePublic}
+              currentUserId={currentUser.id}
+              isCommunityView
+            />
+          </div>
         )}
 
         {activeView === 'stats' && (
@@ -132,29 +175,19 @@ const App: React.FC = () => {
             <h2 className="text-2xl font-bold">Insights</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
-                <p className="text-sm text-slate-500 dark:text-slate-400">Total Thoughts</p>
-                <p className="text-3xl font-bold text-[#6C63FF]">{stats.total}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Your Thoughts</p>
+                <p className="text-3xl font-bold text-[#6C63FF]">{thoughts.filter(t => t.userId === currentUser.id).length}</p>
               </div>
               <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
-                <p className="text-sm text-slate-500 dark:text-slate-400">Pinned</p>
-                <p className="text-3xl font-bold text-[#6C63FF]">{stats.pinned}</p>
-              </div>
-            </div>
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
-              <p className="text-sm font-semibold mb-4 text-slate-500 uppercase tracking-wider">By Category</p>
-              <div className="space-y-3">
-                {TAGS.filter(t => t.name !== 'All').map(tag => (
-                  <div key={tag.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{tag.icon}</span>
-                      <span className="font-medium">{tag.name}</span>
-                    </div>
-                    <span className="text-lg font-bold">{stats.tagCounts[tag.name] || 0}</span>
-                  </div>
-                ))}
+                <p className="text-sm text-slate-500 dark:text-slate-400">Public Shared</p>
+                <p className="text-3xl font-bold text-emerald-500">{thoughts.filter(t => t.userId === currentUser.id && t.isPublic).length}</p>
               </div>
             </div>
           </div>
+        )}
+
+        {activeView === 'profile' && (
+          <ProfileView user={currentUser} thoughts={thoughts} onLogout={handleLogout} />
         )}
       </main>
 
