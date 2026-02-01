@@ -11,6 +11,9 @@ interface ThoughtListProps {
   onTogglePublic: (id: string) => void;
   currentUserId: string;
   isCommunityView?: boolean;
+  // Added social props required by App.tsx and passed to ThoughtCard
+  currentUserFriends?: string[];
+  onSendFriendRequest?: (id: string) => void;
 }
 
 const ThoughtList: React.FC<ThoughtListProps> = ({ 
@@ -20,7 +23,9 @@ const ThoughtList: React.FC<ThoughtListProps> = ({
   onTogglePin, 
   onTogglePublic, 
   currentUserId,
-  isCommunityView 
+  isCommunityView,
+  currentUserFriends,
+  onSendFriendRequest
 }) => {
   if (thoughts.length === 0) {
     return (
@@ -52,6 +57,9 @@ const ThoughtList: React.FC<ThoughtListProps> = ({
           onTogglePublic={() => onTogglePublic(thought.id)}
           currentUserId={currentUserId}
           isCommunityView={isCommunityView}
+          // Pass social props to ThoughtCard
+          currentUserFriends={currentUserFriends}
+          onSendFriendRequest={onSendFriendRequest}
         />
       ))}
     </div>

@@ -11,6 +11,8 @@ interface ThoughtCardProps {
   onTogglePublic: () => void;
   currentUserId: string;
   isCommunityView?: boolean;
+  currentUserFriends?: string[];
+  onSendFriendRequest?: (id: string) => void;
 }
 
 const ThoughtCard: React.FC<ThoughtCardProps> = ({ 
@@ -20,11 +22,14 @@ const ThoughtCard: React.FC<ThoughtCardProps> = ({
   onTogglePin, 
   onTogglePublic, 
   currentUserId,
-  isCommunityView 
+  isCommunityView,
+  currentUserFriends = [],
+  onSendFriendRequest
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const tagConfig = TAGS.find(t => t.name === thought.tag) || TAGS[0];
   const isOwner = thought.userId === currentUserId;
+  const isFriend = currentUserFriends.includes(thought.userId);
 
   const formatTime = (ts: number) => {
     const now = Date.now();
@@ -41,8 +46,18 @@ const ThoughtCard: React.FC<ThoughtCardProps> = ({
         <div className="flex items-center gap-2">
           {isCommunityView && (
             <div className="flex items-center gap-1.5 mr-2">
-              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${thought.authorName}`} className="w-6 h-6 rounded-full bg-slate-100" />
+              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${thought.authorName}`} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700" />
               <span className="text-xs font-bold text-slate-500">@{thought.authorName}</span>
+              
+              {!isOwner && !isFriend && onSendFriendRequest && (
+                  <button 
+                    onClick={() => onSendFriendRequest(thought.userId)}
+                    className="p-1 text-primary hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                    title="Add Friend"
+                  >
+                      <ICONS.UserPlus className="w-4 h-4" />
+                  </button>
+              )}
             </div>
           )}
           <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${tagConfig.colorClass}`}>
@@ -101,7 +116,7 @@ const ThoughtCard: React.FC<ThoughtCardProps> = ({
               <>
                 <button 
                   onClick={onEdit}
-                  className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-slate-700 rounded-xl transition-all"
+                  className="p-2 text-slate-400 hover:text-primary hover:bg-indigo-50 dark:hover:bg-slate-700 rounded-xl transition-all"
                   aria-label="Edit"
                 >
                   <ICONS.Edit className="w-4 h-4" />

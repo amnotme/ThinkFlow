@@ -6,6 +6,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>ThinkFlow</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              primary: '#6C63FF',
+            },
+            animation: {
+              'success-flash': 'success-flash 0.6s ease-out forwards',
+            },
+            keyframes: {
+              'success-flash': {
+                '0%': { backgroundColor: 'transparent' },
+                '50%': { backgroundColor: 'rgba(16, 185, 129, 0.1)' },
+                '100%': { backgroundColor: 'transparent' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
       @supports (padding: env(safe-area-inset-top)) {
         .safe-top { padding-top: env(safe-area-inset-top); }
@@ -15,6 +38,7 @@
       body {
         -webkit-tap-highlight-color: transparent;
         overscroll-behavior-y: none;
+        font-feature-settings: "cv02", "cv03", "cv04", "ss01";
       }
       .custom-scrollbar::-webkit-scrollbar {
         display: none;
@@ -22,6 +46,15 @@
       .custom-scrollbar {
         -ms-overflow-style: none;
         scrollbar-width: none;
+      }
+      .haptic:active {
+        transform: scale(0.96);
+      }
+      html, body {
+        transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      button, a {
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       }
     </style>
 <script type="importmap">
@@ -34,7 +67,7 @@
 }
 </script>
 </head>
-<body class="bg-gray-50 text-slate-900 transition-colors duration-300 dark:bg-[#1A1A2E] dark:text-gray-100">
+<body class="bg-gray-50 text-slate-900 dark:bg-[#0F172A] dark:text-gray-100 min-h-screen selection:bg-primary/20">
     <div id="root"></div>
 </body>
 </html>

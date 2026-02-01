@@ -10,16 +10,16 @@ interface FilterBarProps {
 
 const FilterBar: React.FC<FilterBarProps> = ({ activeTag, onTagSelect }) => {
   return (
-    <div className="flex items-center gap-2 overflow-x-auto py-4 custom-scrollbar sticky top-16 bg-gray-50/80 dark:bg-[#1A1A2E]/80 backdrop-blur-sm z-30">
+    <div className="flex items-center gap-2 overflow-x-auto py-6 custom-scrollbar sticky top-16 bg-gray-50/95 dark:bg-[#0F172A]/95 backdrop-blur-md z-30 -mx-4 px-4 transition-colors">
       {TAGS.map(tag => (
         <button
           key={tag.name}
           onClick={() => onTagSelect(tag.name)}
-          className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-semibold transition-all duration-200 border ${activeTag === tag.name 
-            ? 'bg-[#6C63FF] border-[#6C63FF] text-white shadow-md' 
-            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-[#6C63FF]'}`}
+          className={`flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all duration-300 border-2 ${activeTag === tag.name 
+            ? 'bg-primary border-primary text-white shadow-xl shadow-indigo-500/20 scale-105' 
+            : 'bg-white dark:bg-slate-800 border-white dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-primary/20 hover:text-primary shadow-sm'}`}
         >
-          <span>{tag.icon}</span>
+          <span className="text-sm">{tag.icon}</span>
           <span>{tag.name}</span>
         </button>
       ))}
