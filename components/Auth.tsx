@@ -1,60 +1,15 @@
 
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { ICONS } from '../constants';
 
 interface AuthProps {
-  onSuccess: (userData: { email: string, name: string, picture: string }) => void;
+  onSuccess: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  error?: string | null;
 }
 
-const Auth: React.FC<AuthProps> = ({ onSuccess, theme, onToggleTheme }) => {
-  const googleButtonRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const initializeGoogle = () => {
-      if (!(window as any).google) {
-        setTimeout(initializeGoogle, 200);
-        return;
-      }
-
-      try {
-        (window as any).google.accounts.id.initialize({
-          client_id: "680879505876-0f8n3716oohv3o1u0016m1823o1u0016.apps.googleusercontent.com",
-          callback: (response: any) => {
-            const payload = JSON.parse(atob(response.credential.split('.')[1]));
-            onSuccess({
-              email: payload.email,
-              name: payload.name,
-              picture: payload.picture,
-            });
-          },
-        });
-
-        if (googleButtonRef.current) {
-          (window as any).google.accounts.id.renderButton(googleButtonRef.current, {
-            theme: theme === 'dark' ? 'filled_blue' : 'outline',
-            size: 'large',
-            width: 280,
-            shape: 'pill'
-          });
-        }
-      } catch (e) {
-        console.warn("Google Auth initialization failed (likely due to invalid Client ID). Use Demo mode instead.");
-      }
-    };
-
-    initializeGoogle();
-  }, [theme]);
-
-  const demoSignIn = (name: string) => {
-    onSuccess({
-      email: `${name.toLowerCase()}@demo.local`,
-      name: name,
-      picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
-    });
-  };
-
+const Auth: React.FC<AuthProps> = ({ onSuccess, theme, onToggleTheme, error }) => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-[#0F172A] text-slate-900 dark:text-gray-100 transition-all duration-300">
       <button 
@@ -69,41 +24,37 @@ const Auth: React.FC<AuthProps> = ({ onSuccess, theme, onToggleTheme }) => {
           <div className="w-24 h-24 bg-primary rounded-[2.5rem] mx-auto flex items-center justify-center text-white text-5xl font-black italic shadow-2xl shadow-indigo-500/30">T</div>
           <div className="space-y-2">
             <h1 className="text-5xl font-black tracking-tight bg-gradient-to-r from-primary to-indigo-400 bg-clip-text text-transparent">ThinkFlow</h1>
-            <p className="text-slate-500 dark:text-slate-400 text-lg font-medium">Your mental workspace, synced.</p>
+            <p className="text-slate-500 dark:text-slate-400 text-lg font-medium">Cloud mental workspace.</p>
           </div>
         </div>
 
         <div className="bg-white dark:bg-slate-800 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-700 shadow-2xl shadow-indigo-500/5 space-y-8">
-          <div className="space-y-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Connect your account</p>
-            <div className="flex justify-center">
-              <div ref={googleButtonRef} className="rounded-full overflow-hidden transition-all duration-300"></div>
+          <div className="space-y-6">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Secure Cloud Sync</p>
+            
+            <button 
+              onClick={onSuccess}
+              className="w-full flex items-center justify-center gap-4 py-4 bg-slate-900 dark:bg-primary text-white font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+            >
+              <svg className="w-6 h-6" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24s.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              Continue with Google
+            </button>
+          </div>
+
+          {error && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl text-red-600 dark:text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
+              <p>{error}</p>
             </div>
-          </div>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-slate-700"></div></div>
-            <div className="relative flex justify-center text-[10px] uppercase font-black text-slate-300 dark:text-slate-600 bg-white dark:bg-slate-800 px-4">or enter as a guest</div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button 
-              onClick={() => demoSignIn('Alex')}
-              className="py-4 bg-slate-50 dark:bg-slate-900 rounded-2xl font-bold hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-95 transition-all"
-            >
-              👤 Alex
-            </button>
-            <button 
-              onClick={() => demoSignIn('Jordan')}
-              className="py-4 bg-slate-50 dark:bg-slate-900 rounded-2xl font-bold hover:bg-slate-100 dark:hover:bg-slate-700 active:scale-95 transition-all"
-            >
-              👤 Jordan
-            </button>
-          </div>
+          )}
         </div>
 
-        <p className="text-xs text-slate-400 leading-relaxed max-w-[280px] mx-auto">
-          Sign in to secure your thoughts. Use "Guest" to test friendships and sharing locally.
+        <p className="text-xs text-slate-400 leading-relaxed max-w-[280px] mx-auto uppercase font-bold tracking-wider">
+          Your thoughts are private by default.
         </p>
       </div>
     </div>

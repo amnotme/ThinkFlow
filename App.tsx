@@ -1,5 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, where, setDoc, getDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { Thought, TagType, View, User, FriendRequest } from './types';
 import { TAGS, ICONS } from './constants';
 import Header from './components/Header';
@@ -13,114 +16,127 @@ import Auth from './components/Auth';
 import ProfileView from './components/ProfileView';
 import FriendsView from './components/FriendsView';
 
-const THOUGHTS_STORAGE_KEY = 'thinkflow_thoughts_v6';
-const USERS_STORAGE_KEY = 'thinkflow_all_users_v6';
-const CURRENT_USER_ID_KEY = 'thinkflow_current_user_id_v6';
-const THEME_KEY = 'thinkflow_theme_v6';
+// FIREBASE CONFIGURATION (Final Production Credentials)
+const firebaseConfig = {
+  apiKey: "AIzaSyASk1jAKQ65yxgARhEzZt5OR3spDuvODR0",
+  authDomain: "thinkflow-3b04c.firebaseapp.com",
+  projectId: "thinkflow-3b04c",
+  storageBucket: "thinkflow-3b04c.firebasestorage.app",
+  messagingSenderId: "527998497224",
+  appId: "1:527998497224:web:a4ecff32a1ae71b2e290fd",
+  measurementId: "G-SJ7TQ04632"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
 const App: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [fbUser, setFbUser] = useState<FirebaseUser | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [thoughts, setThoughts] = useState<Thought[]>([]);
   const [activeTag, setActiveTag] = useState<TagType>('All');
   const [activeView, setActiveView] = useState<View>('feed');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [editingThought, setEditingThought] = useState<Thought | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
+  // Theme Sync
   useEffect(() => {
-    const savedTheme = localStorage.getItem(THEME_KEY) as 'light' | 'dark' | null;
+    const savedTheme = localStorage.getItem('tf_theme') as 'light' | 'dark' | null;
     const initialTheme = savedTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     setTheme(initialTheme);
-    
-    let initialUsers: User[] = [];
-    const savedUsers = localStorage.getItem(USERS_STORAGE_KEY);
-    if (savedUsers) {
-      initialUsers = JSON.parse(savedUsers);
-    } else {
-      const alex: User = {
-        id: 'alex-uuid', email: 'alex@thinkflow.app', username: 'Alex', friends: [], friendRequests: [], joinedAt: Date.now() - 86400000 * 5,
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex'
-      };
-      const jordan: User = {
-        id: 'jordan-uuid', email: 'jordan@thinkflow.app', username: 'Jordan', friends: [], friendRequests: [], joinedAt: Date.now() - 86400000 * 2,
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jordan'
-      };
-      initialUsers = [alex, jordan];
-    }
-    setAllUsers(initialUsers);
-
-    const savedSessionId = localStorage.getItem(CURRENT_USER_ID_KEY);
-    if (savedSessionId) setCurrentUserId(savedSessionId);
-
-    const savedThoughts = localStorage.getItem(THOUGHTS_STORAGE_KEY);
-    if (savedThoughts) {
-      setThoughts(JSON.parse(savedThoughts));
-    } else {
-      setThoughts([
-        { id: '1', userId: 'alex-uuid', authorName: 'Alex', text: 'This workspace is exactly what my brain needed. Total focus.', tag: 'Inspiration', createdAt: Date.now() - 3600000, pinned: false, isPublic: true },
-        { id: '2', userId: 'jordan-uuid', authorName: 'Jordan', text: 'Questions for tomorrow:\n1. How to scale static apps?\n2. What is local-first data?', tag: 'Questions', createdAt: Date.now() - 7200000, pinned: false, isPublic: true },
-        { id: '3', userId: 'alex-uuid', authorName: 'Alex', text: 'Finish the UI polish by tonight.', tag: 'To Do', createdAt: Date.now() - 10800000, pinned: false, isPublic: true }
-      ]);
-    }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(THEME_KEY, theme);
+    localStorage.setItem('tf_theme', theme);
     if (theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [theme]);
 
-  useEffect(() => localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(allUsers)), [allUsers]);
-  useEffect(() => localStorage.setItem(THOUGHTS_STORAGE_KEY, JSON.stringify(thoughts)), [thoughts]);
+  // Auth Listener
   useEffect(() => {
-    if (currentUserId) localStorage.setItem(CURRENT_USER_ID_KEY, currentUserId);
-    else localStorage.removeItem(CURRENT_USER_ID_KEY);
-  }, [currentUserId]);
-
-  const currentUser = useMemo(() => allUsers.find(u => u.id === currentUserId) || null, [allUsers, currentUserId]);
-
-  const handleAuthSuccess = (userData: { email: string, name: string, picture: string }) => {
-    setAllUsers(prev => {
-      const existing = prev.find(u => u.email === userData.email);
-      if (existing) {
-        setCurrentUserId(existing.id);
-        return prev;
+    return onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setFbUser(user);
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (!userSnap.exists()) {
+          const newUser: User = {
+            id: user.uid,
+            email: user.email || '',
+            username: user.displayName || 'Thinker',
+            avatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
+            joinedAt: Date.now(),
+            friends: [],
+            friendRequests: []
+          };
+          await setDoc(userRef, newUser);
+          setCurrentUser(newUser);
+        } else {
+          onSnapshot(userRef, (doc) => {
+            if (doc.exists()) {
+              setCurrentUser(doc.data() as User);
+            }
+          });
+        }
+      } else {
+        setFbUser(null);
+        setCurrentUser(null);
       }
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        email: userData.email,
-        username: userData.name,
-        avatar: userData.picture,
-        joinedAt: Date.now(),
-        friends: [],
-        friendRequests: []
-      };
-      setCurrentUserId(newUser.id);
-      return [...prev, newUser];
+      setLoading(false);
     });
-  };
+  }, []);
 
-  const handleImport = (importedThoughts: Thought[]) => {
-    // Basic validation
-    if (!Array.isArray(importedThoughts)) return;
-    setThoughts(prev => {
-      const existingIds = new Set(prev.map(t => t.id));
-      const newOnes = importedThoughts.filter(t => !existingIds.has(t.id));
-      return [...newOnes, ...prev];
+  // Sync Thoughts
+  useEffect(() => {
+    if (!fbUser) {
+      setThoughts([]);
+      return;
+    }
+
+    const q = query(collection(db, 'thoughts'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const thoughtsData = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Thought));
+      setThoughts(thoughtsData);
     });
-    alert(`Imported ${importedThoughts.length} thoughts!`);
+  }, [fbUser]);
+
+  // Sync All Users
+  useEffect(() => {
+    const q = query(collection(db, 'users'));
+    return onSnapshot(q, (snapshot) => {
+      setAllUsers(snapshot.docs.map(doc => doc.data() as User));
+    });
+  }, []);
+
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    setAuthError(null);
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error("Auth error", error);
+      if (error.code === 'auth/unauthorized-domain') {
+        const currentDomain = window.location.hostname;
+        setAuthError(`Unauthorized Domain: Please go to Firebase Console > Auth > Settings and add "${currentDomain}" to the Authorized Domains list.`);
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        setAuthError("Sign-in popup was closed. Please try again.");
+      } else {
+        setAuthError(error.message);
+      }
+    }
   };
 
-  const handleLogout = () => {
-    setCurrentUserId(null);
-    setActiveView('feed');
-  };
+  const handleLogout = () => signOut(auth);
 
-  const addThought = useCallback((text: string, tag: TagType) => {
+  const addThought = useCallback(async (text: string, tag: TagType) => {
     if (!currentUser) return;
-    const newThought: Thought = {
-      id: crypto.randomUUID(),
+    await addDoc(collection(db, 'thoughts'), {
       userId: currentUser.id,
       authorName: currentUser.username,
       text,
@@ -129,59 +145,65 @@ const App: React.FC = () => {
       pinned: false,
       isPublic: false,
       sharedWithFriendIds: [],
-    };
-    setThoughts(prev => [newThought, ...prev]);
+    });
   }, [currentUser]);
 
-  const updateThought = useCallback((updated: Thought) => {
-    setThoughts(prev => prev.map(t => t.id === updated.id ? updated : t));
+  const updateThought = useCallback(async (updated: Thought) => {
+    const { id, ...data } = updated;
+    const thoughtRef = doc(db, 'thoughts', id);
+    await updateDoc(thoughtRef, data);
     setEditingThought(null);
   }, []);
 
-  const deleteThought = useCallback((id: string) => {
-    setThoughts(prev => prev.filter(t => t.id !== id));
+  const deleteThought = useCallback(async (id: string) => {
+    await deleteDoc(doc(db, 'thoughts', id));
   }, []);
 
-  const togglePin = useCallback((id: string) => {
-    setThoughts(prev => prev.map(t => t.id === id ? { ...t, pinned: !t.pinned } : t));
-  }, []);
+  const togglePin = useCallback(async (id: string) => {
+    const thought = thoughts.find(t => t.id === id);
+    if (!thought) return;
+    await updateDoc(doc(db, 'thoughts', id), { pinned: !thought.pinned });
+  }, [thoughts]);
 
-  const togglePublic = useCallback((id: string) => {
-    setThoughts(prev => prev.map(t => t.id === id ? { ...t, isPublic: !t.isPublic } : t));
-  }, []);
+  const togglePublic = useCallback(async (id: string) => {
+    const thought = thoughts.find(t => t.id === id);
+    if (!thought) return;
+    await updateDoc(doc(db, 'thoughts', id), { isPublic: !thought.isPublic });
+  }, [thoughts]);
 
-  const sendFriendRequest = (targetUserId: string) => {
+  const sendFriendRequest = async (targetUserId: string) => {
     if (!currentUser || currentUser.id === targetUserId) return;
-    setAllUsers(prev => prev.map(u => {
-      if (u.id === targetUserId) {
-        if (u.friendRequests.some(r => r.fromId === currentUser.id)) return u;
-        const newRequest: FriendRequest = {
-          fromId: currentUser.id,
-          fromName: currentUser.username,
-          fromAvatar: currentUser.avatar,
-          status: 'pending',
-          timestamp: Date.now()
-        };
-        return { ...u, friendRequests: [...u.friendRequests, newRequest] };
-      }
-      return u;
-    }));
+    const targetRef = doc(db, 'users', targetUserId);
+    const newRequest: FriendRequest = {
+      fromId: currentUser.id,
+      fromName: currentUser.username,
+      fromAvatar: currentUser.avatar,
+      status: 'pending',
+      timestamp: Date.now()
+    };
+    await updateDoc(targetRef, {
+      friendRequests: arrayUnion(newRequest)
+    });
   };
 
-  const handleRequestResponse = (fromId: string, status: 'accepted' | 'declined') => {
+  const handleRequestResponse = async (fromId: string, status: 'accepted' | 'declined') => {
     if (!currentUser) return;
-    setAllUsers(prev => prev.map(u => {
-      if (u.id === currentUser.id) {
-        const updatedRequests = u.friendRequests.filter(r => r.fromId !== fromId);
-        const updatedFriends = status === 'accepted' ? Array.from(new Set([...u.friends, fromId])) : u.friends;
-        return { ...u, friendRequests: updatedRequests, friends: updatedFriends };
-      }
-      if (u.id === fromId && status === 'accepted') {
-        const updatedFriends = Array.from(new Set([...u.friends, currentUser.id]));
-        return { ...u, friends: updatedFriends };
-      }
-      return u;
-    }));
+    const myRef = doc(db, 'users', currentUser.id);
+    const requesterRef = doc(db, 'users', fromId);
+
+    const requestToClear = currentUser.friendRequests.find(r => r.fromId === fromId);
+    if (!requestToClear) return;
+
+    await updateDoc(myRef, {
+      friendRequests: arrayRemove(requestToClear),
+      friends: status === 'accepted' ? arrayUnion(fromId) : currentUser.friends
+    });
+
+    if (status === 'accepted') {
+      await updateDoc(requesterRef, {
+        friends: arrayUnion(currentUser.id)
+      });
+    }
   };
 
   const filteredThoughts = useMemo(() => {
@@ -212,8 +234,26 @@ const App: React.FC = () => {
     });
   }, [thoughts, activeTag, activeView, currentUser]);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0F172A]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+          <p className="text-xs font-black uppercase tracking-widest text-slate-400">Syncing Flow...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
-    return <Auth onSuccess={handleAuthSuccess} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />;
+    return (
+      <Auth 
+        onSuccess={handleLogin} 
+        theme={theme} 
+        onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
+        error={authError}
+      />
+    );
   }
 
   return (
@@ -235,7 +275,10 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                     <ICONS.Community className="text-primary" /> Stream
                 </h2>
-                <span className="text-[10px] font-black text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 uppercase tracking-widest">Public</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse-fast"></div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Live Cloud</span>
+                </div>
             </div>
             <ThoughtList 
               thoughts={filteredThoughts} onEdit={setEditingThought} onDelete={deleteThought} onTogglePin={togglePin} onTogglePublic={togglePublic} 
@@ -257,7 +300,7 @@ const App: React.FC = () => {
                 <p className="text-4xl font-black text-primary mt-2">{thoughts.filter(t => t.userId === currentUser.id).length}</p>
               </div>
               <div className="p-6 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-sm transition-transform hover:scale-[1.02]">
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Friends</p>
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Circle</p>
                 <p className="text-4xl font-black text-emerald-500 mt-2">{currentUser.friends.length}</p>
               </div>
             </div>
@@ -270,7 +313,7 @@ const App: React.FC = () => {
       <BottomNav activeView={activeView} onSetView={setActiveView} hasRequests={currentUser.friendRequests.length > 0} />
 
       {editingThought && <ThoughtModal thought={editingThought} onSave={updateThought} onClose={() => setEditingThought(null)} friends={allUsers.filter(u => currentUser.friends.includes(u.id))} />}
-      {showSettings && <SettingsModal thoughts={thoughts} onClearAll={() => setThoughts([])} onImport={handleImport} onClose={() => setShowSettings(false)} theme={theme} onSetTheme={setTheme} />}
+      {showSettings && <SettingsModal thoughts={thoughts} onClearAll={() => {}} onImport={() => {}} onClose={() => setShowSettings(false)} theme={theme} onSetTheme={setTheme} />}
     </div>
   );
 };
